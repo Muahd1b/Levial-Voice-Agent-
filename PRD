@@ -1,0 +1,162 @@
+Product Requirements Document (PRD)
+
+Product: Local Voice Chat Agent
+Owner: Muahdib
+Version: v1.1 (MVP + Config Layer + Future Orchestration)
+
+----------------------------------------------------------------------
+1. Executive Summary
+----------------------------------------------------------------------
+
+Vision
+- Deliver a fully local, privacy-preserving voice assistant that runs entirely on a personal machine.
+- Core loop: microphone → Whisper ASR → Ollama LLM (mistral:latest as default) “thinking” → Piper TTS → speakers.
+- Supports both wake word and push-to-talk and keeps short-term conversational memory.
+- Everything is driven by a configuration layer so the assistant’s behavior is data-driven rather than code-driven.
+
+Success Criteria
+- Natural voice chat with ≤ 2 s perceived latency for short utterances on “balanced” profile hardware.
+- No audio/text leaves the device by default.
+- Session-level memory enables follow-up questions without manual context restatement.
+- Config profiles allow a user to trade speed, quality, and resource usage without modifying code.
+- Architecture is modular so future tool use, RAG, and agent orchestration can plug into the same loop.
+
+----------------------------------------------------------------------
+2. Goals & Non-Goals
+----------------------------------------------------------------------
+
+2.1 Primary Goals (MVP)
+- Provide reliable voice input/output and conversational turn-taking.
+- Support wake word and push-to-talk activation paths.
+- Persist short-lived memory for multi-turn flows.
+- Make key model/wake-word/timeouts configurable via profiles.
+- Ship with “snappy”, “balanced”, and “quality” presets covering different hardware realities.
+
+2.2 Strategic Goals
+- Keep the architecture modular: ASR, wake word, LLM, TTS, memory, and config can evolve independently.
+- Leave space for future tools, RAG, persistent memory, and multi-agent orchestration.
+
+2.3 Out of Scope (for now)
+- Tool/OS integration, home automation, persistent knowledge stores, rich GUI, multi-user support, hosted/cloud modes.
+
+----------------------------------------------------------------------
+3. Product Scope
+----------------------------------------------------------------------
+
+In Scope (MVP v1)
+- Full voice interaction loop (mic capture → ASR → LLM → TTS → playback).
+- Wake-word listening plus push-to-talk fallback.
+- Session memory held in-process with bounded history.
+- Configuration layer that defines profiles, language behavior, wake-word settings, and latency/timeout parameters.
+
+Explicitly Out of Scope
+- Anything that requires persistent storage beyond short-term conversation history.
+- Advanced device/OS controls, GUI, telemetry, or analytics.
+- Non-local inference or external API calls.
+
+----------------------------------------------------------------------
+4. Target User & Use Cases
+----------------------------------------------------------------------
+
+Primary Persona
+- A single power user on their laptop/desktop who is comfortable running local AI models and values speed and privacy.
+
+Core Use Cases
+- General Q&A and research support.
+- Learning, brainstorming, and ideation sessions.
+- Conversational companionship / casual dialogue.
+- Context-aware follow-ups during a single session.
+
+----------------------------------------------------------------------
+5. Experience Overview
+----------------------------------------------------------------------
+
+5.1 Assistant States
+- IDLE – waiting for wake word or push-to-talk trigger.
+- LISTENING – capturing the user’s utterance.
+- THINKING – ASR processing + LLM generation (with streaming status indicator).
+- SPEAKING – Piper TTS playback.
+
+5.2 Flows
+- Wake Word: user says wake word → visual/audio indicator → LISTENING → THINKING → SPEAKING → return to IDLE.
+- Push-to-Talk: user holds key/button instead of wake word; remaining transitions mirror the wake-word flow.
+
+Experience Principles
+- Immediate feedback whenever the system switches states (lights, tones, or console logs in MVP).
+- Clear error surfacing without crashing the loop.
+
+----------------------------------------------------------------------
+6. System Architecture
+----------------------------------------------------------------------
+
+Component Overview
+- Configuration Layer: defines profiles (“Snappy”, “Balanced”, “Quality”) mapping to ASR/LLM/TTS choices, language behavior (auto/fixed), wake-word parameters, and timeout values. Acts as a single source of truth consumed by every subsystem.
+- Audio Capture: records mic input using default device at profile-defined sample rates; hands off audio chunks to wake word or ASR.
+- Wake-Word Engine: continuously monitors audio (when enabled). On detection, transitions the orchestrator to LISTENING. Supports disablement when push-to-talk is preferred.
+- Push-to-Talk Controller: keyboard/button listener that bypasses wake word to manually enter LISTENING.
+- ASR (Whisper): converts recordings to text using the model + parameters defined by the active profile (language auto-detect or forced language). Returns transcript plus timing metadata for latency tracking.
+- Conversation Orchestrator: central state machine that coordinates transitions, maintains session memory, and builds the prompt for the LLM.
+- LLM (Ollama): generates responses using a system prompt, bounded memory, and per-profile temperature/context values. Uses `mistral:latest` as the default model (configurable).
+- Conversation Memory: keeps the last N turns or token budget to maintain continuity. Clears on session reset.
+- TTS (Piper): synthesizes assistant responses into speech using a configurable local voice model.
+- Playback: streams audio to system speakers with simple controls (start/stop).
+
+Future extensibility hooks
+- Tool-calling, RAG, and richer memory layers can plug into the orchestrator once MVP stability is proven.
+
+----------------------------------------------------------------------
+7. Functional Requirements
+----------------------------------------------------------------------
+
+FR-1 Audio Capture – Capture audio from the default microphone with sufficient fidelity for wake word + ASR.
+FR-2 Wake-Word Detection – Continuously listen (when enabled) and trigger LISTENING on detection with minimal false positives.
+FR-3 Push-to-Talk – Provide manual activation with configurable key/button binding.
+FR-4 Speech-to-Text – Convert recorded utterances to text using Whisper models defined by the current profile.
+FR-5 LLM Conversation – Send system prompt + bounded history to Ollama LLM and stream/generate responses.
+FR-6 Session Memory – Maintain rolling history (token or turn limited) for natural follow-ups; reset on session end.
+FR-7 Text-to-Speech – Convert LLM output to speech using Piper with profile-selected voice and options.
+FR-8 Audio Playback – Play synthesized audio reliably to the user and allow early stop if needed.
+FR-9 Configuration Application – Load profile at startup and propagate ASR, LLM, TTS, wake-word, language, and timeout settings to every subsystem.
+FR-10 Error Handling – Catch and surface ASR/LLM/TTS/wake-word errors with actionable feedback while keeping the loop alive.
+
+----------------------------------------------------------------------
+8. Non-Functional Requirements
+----------------------------------------------------------------------
+
+NFR-1 Privacy – No audio or text leaves the machine; offline-first operation.
+NFR-2 Latency – On reference hardware, typical responses begin speaking within ≤ 2 seconds after the user stops talking (balanced profile).
+NFR-3 Resource Flexibility – Profiles allow users to match the workload to their hardware (small vs. large models).
+NFR-4 Reliability – Support multi-hour sessions, including continuous wake-word listening, without leaks or crashes.
+NFR-5 Modularity – Components (wake word, ASR, LLM, TTS, memory, config) interact via defined interfaces so replacements/extensions are easy.
+NFR-6 Configurability – All critical behavior (models, languages, wake word, timeouts) is data-driven; no code change required for tuning.
+
+----------------------------------------------------------------------
+9. Release Plan
+----------------------------------------------------------------------
+
+Phase 1 – Core MVP
+- Push-to-talk loop.
+- Whisper + Ollama + Piper pipeline.
+- Session memory and minimal configuration (profile selection + latency tuning).
+
+Phase 2 – Wake Word Integration
+- Add wake-word engine and state transitions IDLE → LISTENING → THINKING → SPEAKING.
+- Expose wake-word options in configuration.
+
+Phase 3 – Hardening & UX
+- Refine profiles, timeouts, indicators, and error handling.
+- Document configuration schema and ensure stable loading sequence.
+
+Phase 4 – Foundation for Orchestrated Agents
+- Extend configuration with tool definitions and persistent memory knobs.
+- Introduce hooks for RAG and multi-agent workflows while keeping the same orchestrator.
+
+----------------------------------------------------------------------
+10. Open Questions & Risks
+----------------------------------------------------------------------
+
+1. Configuration surface area – how much schema do we expose in v1 vs. hiding behind presets?
+2. Latency targets – need to validate the ≤ 2 s goal across different hardware tiers; may require progressive streaming from the LLM.
+3. Wake-word UX – decision on default wake word and false-positive mitigation (e.g., confirmation tone, confidence thresholds).
+4. Memory bounds – pick the right default token budget so “quality” profile stays coherent without blowing up inference time.
+5. Future orchestration – identify earliest hooks (tool interface, metadata schema) to avoid rework when agents arrive.
