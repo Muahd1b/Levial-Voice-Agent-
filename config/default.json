@@ -5,7 +5,7 @@
       "description": "Current mistral + Whisper small + Piper Lessac setup",
       "llm_model": "mistral:latest",
       "whisper_model": "whisper.cpp/models/ggml-small.bin",
-      "piper_model": "en_US-lessac-medium.onnx",
+      "piper_model": "models/piper/en_US-lessac-medium.onnx",
       "temperature": 0.7,
       "max_history_turns": 6,
       "mic_sample_rate": 16000,
@@ -25,7 +25,7 @@
     "filesystem": {
       "enabled": false,
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/jonasknppel/voice-agent/artifacts"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/jonasknppel/voice-agent/data/artifacts"]
     },
     "brave-search": {
       "enabled": false,
@@ -81,5 +81,5 @@
       "args": ["-m", "levial.tools.flashcards"]
     }
   },
-  "artifacts_dir": "artifacts"
+  "artifacts_dir": "data/artifacts"
 }

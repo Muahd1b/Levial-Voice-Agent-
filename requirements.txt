@@ -1,2 +1,6 @@
 sounddevice
 numpy
+fastapi
+uvicorn
+websockets
+chromadb

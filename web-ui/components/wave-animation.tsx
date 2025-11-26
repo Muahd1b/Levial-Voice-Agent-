@@ -23,11 +23,15 @@ export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
       transition: { duration: 0.5 },
     },
     listening: {
-      scale: 1 + audioLevel * 1.5, // Dynamic scaling based on volume
-      opacity: 1,
-      borderColor: "rgba(34, 197, 94, 0.8)", // Green
-      boxShadow: `0 0 ${20 + audioLevel * 50}px rgba(34, 197, 94, 0.6)`,
-      transition: { duration: 0.1 }, // Fast transition for responsiveness
+      scale: [1 + audioLevel * 0.5, 1 + audioLevel * 1.5, 1 + audioLevel * 0.5], // Pulse effect + dynamic scaling
+      opacity: [0.8, 1, 0.8],
+      borderColor: "rgba(34, 197, 94, 0.9)", // Brighter Green
+      boxShadow: [
+        `0 0 ${20 + audioLevel * 30}px rgba(34, 197, 94, 0.4)`,
+        `0 0 ${30 + audioLevel * 60}px rgba(34, 197, 94, 0.7)`,
+        `0 0 ${20 + audioLevel * 30}px rgba(34, 197, 94, 0.4)`
+      ],
+      transition: { duration: 1.5, repeat: Infinity }, // Smooth pulsing
     },
     thinking: {
       scale: [1, 0.9, 1],
@@ -62,7 +66,7 @@ export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
       case "wake_word_detected":
         return "Wake word detected!";
       case "listening":
-        return "Listening...";
+        return "I'm listening...";
       case "thinking":
         return "Thinking...";
       case "speaking":

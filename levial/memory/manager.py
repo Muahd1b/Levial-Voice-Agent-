@@ -16,7 +16,7 @@ class MemoryManager:
         Args:
             base_dir: Base directory for storing memory artifacts.
         """
-        self.memory_dir = base_dir / "memory"
+        self.memory_dir = base_dir / "data"
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         
         self.vector_store = VectorStore(str(self.memory_dir / "chroma_db"))
