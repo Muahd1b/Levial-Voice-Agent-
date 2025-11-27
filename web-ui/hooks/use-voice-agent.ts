@@ -7,20 +7,27 @@ interface VoiceAgentState {
   transcript: string;
   lastResponse: string;
   isConnected: boolean;
+  agentRunning: boolean;
   wakeWord?: string;
   userProfile?: any;
   audioLevel?: number;
+  micSensitivity: number;
+  proactivityLevel: number;
 }
 
 export function useVoiceAgent() {
+  // Load mic sensitivity from localStorage or use default (1.5)
   const [state, setState] = useState<VoiceAgentState>({
     status: "idle",
     transcript: "",
     lastResponse: "",
     isConnected: false,
+    agentRunning: false,
     wakeWord: undefined,
     userProfile: undefined,
     audioLevel: 0,
+    micSensitivity: typeof window !== "undefined" ? parseFloat(localStorage.getItem("micSensitivity") || "1.5") : 1.5,
+    proactivityLevel: typeof window !== "undefined" ? parseFloat(localStorage.getItem("proactivityLevel") || "0") : 0,
   });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -100,6 +107,14 @@ export function useVoiceAgent() {
         setState((prev) => ({ ...prev, status: "error" }));
         console.error("Voice Agent Error:", data.message);
         break;
+      case "agent_started":
+        setState((prev) => ({ ...prev, agentRunning: true, status: "idle" }));
+        console.log("Agent started");
+        break;
+      case "agent_stopped":
+        setState((prev) => ({ ...prev, agentRunning: false, status: "idle" }));
+        console.log("Agent stopped");
+        break;
     }
   };
 
@@ -137,8 +152,75 @@ export function useVoiceAgent() {
     }
   };
 
+  const updateConfig = (config: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "update_config",
+        config: config
+      }));
+      console.log("Sent config update:", config);
+    } else {
+      console.error("WebSocket not connected, cannot update config");
+    }
+  };
+
+  const setMicSensitivity = (value: number) => {
+    setState((prev) => ({ ...prev, micSensitivity: value }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("micSensitivity", value.toString());
+    }
+    updateConfig({ silence_duration: value });
+  };
+
+  const setProactivityLevel = (value: number) => {
+    setState((prev) => ({ ...prev, proactivityLevel: value }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("proactivityLevel", value.toString());
+    }
+    updateConfig({ proactivity_level: value });
+  };
+
+  const triggerAgent = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "trigger_wake"
+      }));
+      console.log("Sent manual wake trigger");
+    } else {
+      console.error("WebSocket not connected, cannot trigger agent");
+    }
+  };
+
+  const startAgent = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "start_agent"
+      }));
+      console.log("Sent start agent request");
+    } else {
+      console.error("WebSocket not connected, cannot start agent");
+    }
+  };
+
+  const stopAgent = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "stop_agent"
+      }));
+      console.log("Sent stop agent request");
+    } else {
+      console.error("WebSocket not connected, cannot stop agent");
+    }
+  };
+
   return {
     ...state,
     updateKnowledge,
+    updateConfig,
+    setMicSensitivity,
+    setProactivityLevel,
+    triggerAgent,
+    startAgent,
+    stopAgent,
   };
 }

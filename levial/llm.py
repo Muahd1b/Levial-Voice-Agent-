@@ -5,7 +5,7 @@ class OllamaLLM:
     def __init__(self, model_name: str):
         self.model_name = model_name
 
-    def build_prompt(self, history: List[Tuple[str, str]], user_text: str, context: str = "", tools_json: str = "") -> str:
+    def build_prompt(self, history: List[Tuple[str, str]], user_text: str, context: str = "", tools_json: str = "", user_preferences: str = "") -> str:
         system_prompt = (
             "You are Levial, a capable and intelligent voice assistant. "
             "You have access to external tools to help the user. "
@@ -15,6 +15,9 @@ class OllamaLLM:
         )
         
         lines = [system_prompt]
+        
+        if user_preferences:
+            lines.append(f"IMPORTANT - ADAPT TO USER PREFERENCES: {user_preferences}")
         
         if tools_json:
             lines.append(f"\nAVAILABLE TOOLS (Use JSON to call):\n{tools_json}\n")

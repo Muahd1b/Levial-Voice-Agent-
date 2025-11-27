@@ -6,10 +6,14 @@ import { Mic } from "lucide-react";
 interface WaveAnimationProps {
   status: string;
   audioLevel?: number;
+  agentRunning: boolean;
+  onTrigger?: () => void;
+  onStartAgent?: () => void;
 }
 
-export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
+export function WaveAnimation({ status, audioLevel = 0, agentRunning, onTrigger, onStartAgent }: WaveAnimationProps) {
   const variants = {
+    // ... (variants remain same)
     idle: {
       scale: [1, 1.05, 1],
       opacity: 0.5,
@@ -60,9 +64,13 @@ export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
   };
 
   const getStatusText = () => {
+    if (!agentRunning) {
+      return "Click to start the agent";
+    }
+    
     switch (status) {
       case "idle":
-        return 'Say "Hey Jarvis" to wake me up';
+        return 'Say "Hey Jarvis" or click to wake me up';
       case "wake_word_detected":
         return "Wake word detected!";
       case "listening":
@@ -79,7 +87,16 @@ export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
   };
 
   return (
-    <div className="relative flex items-center justify-center h-64 w-64">
+    <div 
+      className={`relative flex items-center justify-center h-64 w-64 ${!agentRunning || status === "idle" ? "cursor-pointer" : ""}`}
+      onClick={() => {
+        if (!agentRunning) {
+          onStartAgent?.();
+        } else if (status === "idle") {
+          onTrigger?.();
+        }
+      }}
+    >
       {/* Outer waves */}
       {[0, 1, 2].map((index) => (
         <motion.div
@@ -102,7 +119,7 @@ export function WaveAnimation({ status, audioLevel = 0 }: WaveAnimationProps) {
 
       {/* Center icon */}
       <motion.div
-        className={`absolute z-10 rounded-full p-8 shadow-lg ${status === "error" ? "bg-red-500" : "bg-primary"}`}
+        className={`absolute z-10 rounded-full p-8 shadow-lg ${status === "error" ? "bg-red-500" : "bg-primary"} ${status === "idle" ? "hover:scale-110 transition-transform" : ""}`}
         animate={{
           scale: status === "speaking" ? [1, 1.1, 1] : status === "listening" ? 1.05 : 1,
         }}

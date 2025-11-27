@@ -44,6 +44,10 @@ class MemoryManager:
         profile = self.user_profile.get_profile()
         profile_str = f"User Profile: {profile}"
         
+        # 2. Get Current Time Context
+        current_time_str = time.strftime("%A, %B %d, %Y %I:%M %p")
+        time_context = f"Current Time: {current_time_str}"
+        
         # 2. Get episodic memories
         memories = self.vector_store.search_memory(query, n_results=3)
         memory_str = ""
@@ -52,7 +56,7 @@ class MemoryManager:
             for mem in memories:
                 memory_str += f"- {mem['metadata'].get('role', 'unknown')}: {mem['text']}\n"
         
-        return f"{profile_str}\n{memory_str}"
+        return f"{time_context}\n{profile_str}\n{memory_str}"
 
     def extract_and_update_knowledge(self, user_message: str, assistant_message: str, llm_query_fn) -> Dict[str, Any]:
         """

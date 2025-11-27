@@ -9,6 +9,8 @@ import queue
 import sounddevice as sd
 import numpy as np
 import threading
+import time
+import random
 
 from .config import ConfigManager
 from .audio import AudioCapture, AudioPlayer
@@ -87,6 +89,12 @@ class ConversationOrchestrator:
         # Status Callback for WebSocket
         self.status_callback = None
         
+        # Configurable Parameters
+        self.silence_duration = 1.5  # Default value, can be updated via WebSocket
+        self.proactivity_level = 0.0 # 0.0 to 1.0
+        self.last_interaction_time = time.time()
+        self.is_proactive_trigger = False
+        
         # Shutdown Control
         self.shutdown_event = threading.Event()
         self.input_listener = InputListener(callback=self.shutdown_event.set)
@@ -102,6 +110,23 @@ class ConversationOrchestrator:
             if data:
                 payload.update(data)
             self.status_callback(status, payload)
+
+    def update_config(self, config: Dict[str, Any]):
+        """Update orchestrator configuration dynamically."""
+        if "silence_duration" in config:
+            self.silence_duration = config["silence_duration"]
+            print(f"[Config] Updated silence_duration to {self.silence_duration}s")
+        if "proactivity_level" in config:
+            self.proactivity_level = float(config["proactivity_level"])
+            print(f"[Config] Updated proactivity_level to {self.proactivity_level}")
+
+    def trigger_wake(self):
+        """Manually trigger the wake word (e.g. from UI click)."""
+        # Only trigger if we are waiting for wake word (IDLE state)
+        if not self.wake_event.is_set():
+            print("[!] Manual wake trigger received")
+            self.detected_wake_word = "Manual Trigger"
+            self.wake_event.set()
 
     async def start(self):
         """Async entry point to initialize MCP and run the loop."""
@@ -149,6 +174,7 @@ class ConversationOrchestrator:
             self._emit_status("idle")
             self.wake_event.clear()
             self.detected_wake_word = None
+            self.is_proactive_trigger = False
             
             audio_q = queue.Queue()
             stream = self._get_audio_stream(audio_q)
@@ -165,56 +191,71 @@ class ConversationOrchestrator:
                 # Wait for wake word OR shutdown
                 while not self.wake_event.is_set() and not self.shutdown_event.is_set():
                     self.wake_event.wait(timeout=0.5)
+                    
+                    # Proactivity Check
+                    if self.proactivity_level > 0:
+                        idle_time = time.time() - self.last_interaction_time
+                        if idle_time > 30: # 30s minimum idle
+                            # Chance check (runs every 0.5s)
+                            # Max level (1.0) -> ~1% chance per 0.5s -> ~2% per sec -> ~50s avg wait
+                            if random.random() < (self.proactivity_level * 0.01):
+                                print(f"[Proactive] Triggered! Idle: {idle_time:.1f}s")
+                                self.is_proactive_trigger = True
+                                self.wake_event.set()
                 
                 self.wake_listener.stop()
             
             if self.shutdown_event.is_set():
                 break
 
-            print(f"[!] Wake Word Detected: {self.detected_wake_word}")
-            self._emit_status("wake_word_detected", {"wake_word": self.detected_wake_word})
-            
-            if self.detected_wake_word and "alexa" in self.detected_wake_word.lower():
-                print("[i] 'Alexa' detected - Pausing listening. Say 'Hey Jarvis' to resume.")
-                self._emit_status("idle")
-                continue  # Return to wake word listening instead of exiting
-            
-            # --- STATE: LISTENING (User Command) ---
-            print("[State] LISTENING - Speak now...")
-            self._emit_status("listening")
-            timestamp = int(time.time())
-            audio_path = self.config.artifacts_dir / f"utterance_{timestamp}.wav"
-            
-            # Define volume callback to emit status
-            def volume_callback(level):
-                # Throttle updates to avoid flooding WebSocket? 
-                # For now, just emit. The frontend can handle it or we can throttle here.
-                # Let's throttle to every ~100ms if needed, but for now raw is fine for smoothness.
-                # Actually, let's scale it up a bit for visibility
-                scaled_level = min(level * 5, 1.0) 
-                self._emit_status("audio_level", {"level": scaled_level})
-
-            # Record until silence
-            recorded_path = await asyncio.to_thread(
-                self.audio_capture.record_until_silence, 
-                output_path=audio_path,
-                silence_threshold=0.01, # Adjust based on mic
-                silence_duration=1.5,
-                volume_callback=volume_callback
-            )
-            
-            if self.shutdown_event.is_set():
-                break
-            
-            if not recorded_path:
-                print("[!] No audio recorded.")
-                continue
-
-            try:
-                transcript = await asyncio.to_thread(self.asr.transcribe, recorded_path)
-            except subprocess.CalledProcessError as exc:
-                print(f"[x] Whisper failed: {exc}")
-                continue
+            if self.is_proactive_trigger:
+                print(f"[!] Proactive Interaction Triggered")
+                self._emit_status("wake_word_detected", {"wake_word": "Proactive"})
+                # Skip listening and jump to generation
+                # We construct a prompt for the agent to initiate conversation
+                transcript = "System: The user has been idle. Initiate a conversation based on their interests."
+            else:
+                if self.detected_wake_word and "alexa" in self.detected_wake_word.lower():
+                    print("[i] 'Alexa' detected - Pausing listening. Say 'Hey Jarvis' to resume.")
+                    self._emit_status("idle")
+                    continue  # Return to wake word listening instead of exiting
+                
+                # --- STATE: LISTENING (User Command) ---
+                print("[State] LISTENING - Speak now...")
+                self._emit_status("listening")
+                timestamp = int(time.time())
+                audio_path = self.config.artifacts_dir / f"utterance_{timestamp}.wav"
+                
+                # Define volume callback to emit status
+                def volume_callback(level):
+                    # Throttle updates to avoid flooding WebSocket? 
+                    # For now, just emit. The frontend can handle it or we can throttle here.
+                    # Let's throttle to every ~100ms if needed, but for now raw is fine for smoothness.
+                    # Actually, let's scale it up a bit for visibility
+                    scaled_level = min(level * 5, 1.0) 
+                    self._emit_status("audio_level", {"level": scaled_level})
+    
+                # Record until silence
+                recorded_path = await asyncio.to_thread(
+                    self.audio_capture.record_until_silence, 
+                    output_path=audio_path,
+                    silence_threshold=0.01, # Adjust based on mic
+                    silence_duration=self.silence_duration,
+                    volume_callback=volume_callback
+                )
+                
+                if self.shutdown_event.is_set():
+                    break
+                
+                if not recorded_path:
+                    print("[!] No audio recorded.")
+                    continue
+    
+                try:
+                    transcript = await asyncio.to_thread(self.asr.transcribe, recorded_path)
+                except subprocess.CalledProcessError as exc:
+                    print(f"[x] Whisper failed: {exc}")
+                    continue
 
             if not transcript:
                 print("[!] Empty transcript.")
@@ -233,6 +274,11 @@ class ConversationOrchestrator:
             # --- Memory Retrieval ---
             context = self.memory_manager.get_relevant_context(transcript)
             
+            # Get User Preferences
+            user_profile = self.memory_manager.user_profile.get_profile()
+            preferences = user_profile.get("preferences", [])
+            prefs_str = ", ".join(preferences) if preferences else ""
+            
             # --- Agentic Loop ---
             max_turns = 5
             current_turn = 0
@@ -241,7 +287,7 @@ class ConversationOrchestrator:
                 current_turn += 1
                 
                 tools_json = json.dumps(self.mcp_client.tools, indent=2)
-                full_prompt = self.llm.build_prompt(self.history, transcript, context=context, tools_json=tools_json) 
+                full_prompt = self.llm.build_prompt(self.history, transcript, context=context, tools_json=tools_json, user_preferences=prefs_str) 
 
                 print(f"[State] THINKING (Turn {current_turn})...")
                 self._emit_status("thinking", {"turn": current_turn})
@@ -302,14 +348,24 @@ class ConversationOrchestrator:
                 except Exception as e:
                     print(f"[!] Knowledge extraction failed: {e}")
                 
-                # --- STATE: SPEAKING (with Barge-In) ---
-                print("[State] SPEAKING...")
+                # Break out of loop - we got a final answer (no tool call)
+                break
+            
+            # --- STATE: SPEAKING (TTS) ---
+            if reply:
+                print(f"[State] SPEAKING: {reply}")
                 self._emit_status("speaking")
+                self.history.append(("agent", reply))
+                
+                # Update last interaction time
+                self.last_interaction_time = time.time()
+                
+                # Generate TTS
                 try:
-                    audio_reply = await asyncio.to_thread(self.tts.synthesize, reply, self.config.artifacts_dir)
-                    
-                    # Start Playback
-                    self.audio_player.play(audio_reply)
+                    audio_file = await asyncio.to_thread(self.tts.synthesize, reply, self.config.artifacts_dir)
+                    self.audio_player.play(audio_file)
+                except Exception as e:
+                    print(f"[x] TTS Error: {e}")
                     
                     # Start Barge-In Monitoring
                     barge_q = queue.Queue()
@@ -395,5 +451,3 @@ class ConversationOrchestrator:
 
                 except subprocess.CalledProcessError as exc:
                     print(f"[x] Piper/playback error: {exc}")
-                
-                break # End of turns
